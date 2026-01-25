@@ -13,8 +13,6 @@ import { iife } from "@/util/iife"
 import { type SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 
-const transients = new Set([404, 408, 429, 500, 502, 503, 504])
-
 export namespace MessageV2 {
   export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
   export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
@@ -722,13 +720,21 @@ export namespace MessageV2 {
         }).trim()
 
         const metadata = e.url ? { url: e.url } : undefined
-        const status = e.statusCode
         const retryable = iife(() => {
-          if (ctx.providerID !== "openai") return e.isRetryable
-          if (!status) return e.isRetryable
           if (e.isRetryable) return true
-          if (transients.has(status)) return true
-          return false
+          if (ctx.providerID !== "openai") return e.isRetryable
+          const status = e.statusCode
+          if (!status) return e.isRetryable
+          const transient =
+            status === 404 ||
+            status === 408 ||
+            status === 429 ||
+            status === 500 ||
+            status === 502 ||
+            status === 503 ||
+            status === 504
+          if (!transient) return e.isRetryable
+          return true
         })
         return new MessageV2.APIError(
           {

@@ -130,37 +130,37 @@ describe("session.message-v2.fromError", () => {
     expect(retryable).toBe("Connection reset by server")
   })
 
-  test.each([404, 408, 429, 500, 502, 503, 504])("marks %s as retryable for openai", (status) => {
-    const error = new APICallError({
-      message: "boom",
-      url: "https://api.openai.com/v1/responses",
-      requestBodyValues: {},
-      statusCode: status,
-      responseHeaders: {},
-      responseBody: "{}",
-      isRetryable: false,
-    })
-
-    const result = MessageV2.fromError(error, { providerID: "openai" }) as MessageV2.APIError
-
-    expect(MessageV2.APIError.isInstance(result)).toBe(true)
-    expect(result.data.isRetryable).toBe(true)
+  test("marks OpenAI transient status codes as retryable", () => {
+    const statuses = [404, 408, 429, 500, 502, 503, 504]
+    for (const status of statuses) {
+      const error = new APICallError({
+        message: "boom",
+        url: "https://api.openai.com/v1/chat/completions",
+        requestBodyValues: {},
+        statusCode: status,
+        responseHeaders: { "content-type": "application/json" },
+        responseBody: "{\"error\":\"boom\"}",
+        isRetryable: false,
+      })
+      const result = MessageV2.fromError(error, { providerID: "openai" })
+      expect(MessageV2.APIError.isInstance(result)).toBe(true)
+      expect((result as MessageV2.APIError).data.isRetryable).toBe(true)
+      expect((result as MessageV2.APIError).data.statusCode).toBe(status)
+    }
   })
 
-  test("keeps non-transient status non-retryable for openai", () => {
+  test("keeps non-transient OpenAI status codes non-retryable", () => {
     const error = new APICallError({
       message: "boom",
-      url: "https://api.openai.com/v1/responses",
+      url: "https://api.openai.com/v1/chat/completions",
       requestBodyValues: {},
       statusCode: 400,
-      responseHeaders: {},
-      responseBody: "{}",
+      responseHeaders: { "content-type": "application/json" },
+      responseBody: "{\"error\":\"boom\"}",
       isRetryable: false,
     })
-
-    const result = MessageV2.fromError(error, { providerID: "openai" }) as MessageV2.APIError
-
+    const result = MessageV2.fromError(error, { providerID: "openai" })
     expect(MessageV2.APIError.isInstance(result)).toBe(true)
-    expect(result.data.isRetryable).toBe(false)
+    expect((result as MessageV2.APIError).data.isRetryable).toBe(false)
   })
 })
