@@ -656,6 +656,20 @@ export namespace MessageV2 {
     return result
   }
 
+  const isOpenAiErrorRetryable = (e: APICallError) => {
+    const status = e.statusCode
+    if (!status) return e.isRetryable
+    const transient =
+      status === 404 || // openai sometimes returns 404 for models that are actually available
+      status === 408 ||
+      status === 429 ||
+      status === 500 ||
+      status === 502 ||
+      status === 503 ||
+      status === 504
+    return transient || e.isRetryable
+  }
+
   export function fromError(e: unknown, ctx: { providerID: string }) {
     switch (true) {
       case e instanceof DOMException && e.name === "AbortError":
@@ -720,27 +734,11 @@ export namespace MessageV2 {
         }).trim()
 
         const metadata = e.url ? { url: e.url } : undefined
-        const retryable = iife(() => {
-          if (e.isRetryable) return true
-          if (ctx.providerID !== "openai") return e.isRetryable
-          const status = e.statusCode
-          if (!status) return e.isRetryable
-          const transient =
-            status === 404 ||
-            status === 408 ||
-            status === 429 ||
-            status === 500 ||
-            status === 502 ||
-            status === 503 ||
-            status === 504
-          if (!transient) return e.isRetryable
-          return true
-        })
         return new MessageV2.APIError(
           {
             message,
             statusCode: e.statusCode,
-            isRetryable: retryable,
+            isRetryable: ctx.providerID === "openai" ? isOpenAiErrorRetryable(e) : e.isRetryable,
             responseHeaders: e.responseHeaders,
             responseBody: e.responseBody,
             metadata,
