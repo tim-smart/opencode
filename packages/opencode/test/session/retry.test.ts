@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { APICallError } from "ai"
 import { SessionRetry } from "../../src/session/retry"
 import { MessageV2 } from "../../src/session/message-v2"
 
@@ -127,5 +128,39 @@ describe("session.message-v2.fromError", () => {
     const retryable = SessionRetry.retryable(error)
     expect(retryable).toBeDefined()
     expect(retryable).toBe("Connection reset by server")
+  })
+
+  test.each([404, 408, 429, 500, 502, 503, 504])("marks %s as retryable for openai", (status) => {
+    const error = new APICallError({
+      message: "boom",
+      url: "https://api.openai.com/v1/responses",
+      requestBodyValues: {},
+      statusCode: status,
+      responseHeaders: {},
+      responseBody: "{}",
+      isRetryable: false,
+    })
+
+    const result = MessageV2.fromError(error, { providerID: "openai" }) as MessageV2.APIError
+
+    expect(MessageV2.APIError.isInstance(result)).toBe(true)
+    expect(result.data.isRetryable).toBe(true)
+  })
+
+  test("keeps non-transient status non-retryable for openai", () => {
+    const error = new APICallError({
+      message: "boom",
+      url: "https://api.openai.com/v1/responses",
+      requestBodyValues: {},
+      statusCode: 400,
+      responseHeaders: {},
+      responseBody: "{}",
+      isRetryable: false,
+    })
+
+    const result = MessageV2.fromError(error, { providerID: "openai" }) as MessageV2.APIError
+
+    expect(MessageV2.APIError.isInstance(result)).toBe(true)
+    expect(result.data.isRetryable).toBe(false)
   })
 })
